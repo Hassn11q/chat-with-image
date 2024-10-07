@@ -2,6 +2,7 @@ import os
 import base64
 import streamlit as st
 from groq import Groq
+from mistralai import Mistral
 from dotenv import load_dotenv
 from typing import List
 
@@ -14,8 +15,17 @@ IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"]
 # Streamlit Configuration
 st.set_page_config(page_title="Chat with Image", page_icon="🖼️", layout="centered")
 
-# Initialize Groq Client
-client = Groq(api_key=os.environ["GROQ_API_KEY"])
+# Initialize Groq and Mistral Clients using caching to avoid reinitializing
+@st.cache_resource
+def initialize_groq_client():
+    return Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+@st.cache_resource
+def initialize_mistral_client():
+    return Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
+
+groq_client = initialize_groq_client()
+mistral_client = initialize_mistral_client()
 
 # System Message Configuration
 SYSTEM_MESSAGE = {
@@ -58,50 +68,83 @@ def file_upload():
             st.error("Please upload up to 3 images with valid extensions: " + ", ".join(IMAGE_EXTENSIONS))
         return None, None
 
-def get_image_response(image, prompt, model):
-    """Request an image response from the API."""
-    image_base64 = encode_image(image)
-    image_url = f"data:image/jpeg;base64,{image_base64}"
+def get_image_response_groq(image, prompt, model):
+    """Request an image response from the GROQ API."""
+    try:
+        image_base64 = encode_image(image)
+        image_url = f"data:image/jpeg;base64,{image_base64}"
 
-    completion = client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image_url}}
-                ]
-            }
-        ],
-        temperature=0.0,
-        max_tokens=256,
-        top_p=1,
-        stream=False,
-        stop=None
-    )
-    
-    return completion.choices[0].message.content
+        completion = groq_client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": image_url}}
+                    ]
+                }
+            ],
+            temperature=0.0,
+            max_tokens=256,
+            top_p=1,
+            stream=False,
+            stop=None
+        )
+
+        return completion.choices[0].message.content
+    except Exception as e:
+        st.error(f"Error with GROQ API: {str(e)}")
+        return None
+
+def get_image_response_mistral(image, prompt, model):
+    """Request an image response from the Mistral API."""
+    try:
+        image_base64 = encode_image(image)
+        image_url = f"data:image/jpeg;base64,{image_base64}"
+
+        completion = mistral_client.chat.complete(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": image_url}}
+                    ]
+                }
+            ],
+            temperature=0.0,
+            max_tokens=256,
+            top_p=1,
+            stream=False,
+            stop=None
+        )
+
+        return completion.choices[0].message.content
+    except Exception as e:
+        st.error(f"Error with Mistral API: {str(e)}")
+        return None
 
 def main():
     """Main application logic."""
     # Custom HTML Example
     custom_html = """
-<div style="text-align: center; background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
-    <h1 style="color: #4CAF50;">Chat with Image🖼️</h1>
-    <p style="font-size: 15px;">Upload images and ask questions about them.</p>
-    <div class="footer">
-        Developed with ❤️ by Hassn | 
-        <a href="https://github.com/Hassn11q" target="_blank" class="text-blue-600 hover:underline">GitHub</a>
+    <div style="text-align: center; background-color: #f0f0f0; padding: 20px; border-radius: 10px;">
+        <h1 style="color: #4CAF50;">Chat with Image🖼️</h1>
+        <p style="font-size: 15px;">Upload images and ask questions about them.</p>
+        <div class="footer">
+            Developed with ❤️ by Hassn | 
+            <a href="https://github.com/Hassn11q" target="_blank" class="text-blue-600 hover:underline">GitHub</a>
+        </div>
     </div>
-</div>
-"""
+    """
 
     st.markdown(custom_html, unsafe_allow_html=True)
 
     model = st.sidebar.selectbox(
         "Select Model",
-        ("llama-3.2-11b-vision-preview", "llava-v1.5-7b-4096-preview")
+        ("llama-3.2-11b-vision-preview", "llava-v1.5-7b-4096-preview", "pixtral-12b-2409")
     )
     
     # Modify system prompt
@@ -139,14 +182,25 @@ def main():
             st.markdown(prompt)
 
         # Fetch assistant response
-        with st.spinner("generating response..."):
-            response = get_image_response(uploaded_files[0], prompt, model) if uploaded_files else None
-        
-        if not response:
-            messages = [SYSTEM_MESSAGE, *st.session_state.messages]
-            stream = client.chat.completions.create(model=model, messages=messages, stream=True)
-            response = st.write_stream(stream)
-        
+        with st.spinner("Generating response..."):
+            response = None
+            if uploaded_files:
+                if model == "pixtral-12b-2409":
+                    response = get_image_response_mistral(uploaded_files[0], prompt, model)
+                else:
+                    response = get_image_response_groq(uploaded_files[0], prompt, model)
+            
+            # If no image is uploaded, generate a regular text-based response
+            if not response:
+                messages = [SYSTEM_MESSAGE, *st.session_state.messages]
+                client = mistral_client if model == "pixtral-12b-2409" else groq_client
+                try:
+                    stream = client.chat.completions.create(model=model, messages=messages, stream=True)
+                    response = st.write_stream(stream)  
+                except Exception as e:
+                    st.error(f"Error generating response: {str(e)}")
+                    return
+
         # Add assistant response to chat history
         st.session_state.messages.append({"role": "assistant", "content": response})
         
