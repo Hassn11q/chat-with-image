@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project is a Streamlit application that allows users to upload an image and interact with it through a chat interface. The application utilizes the Groq API to generate responses based on user prompts related to the uploaded image.
+This project is a Streamlit application that allows users to upload an image and interact with it through a chat interface. The application utilizes the Groq API and mistral API to generate responses based on user prompts related to the uploaded image.
 
 ## Features
 
@@ -16,6 +16,7 @@ This project is a Streamlit application that allows users to upload an image and
 - **Python**: Main programming language.
 - **Streamlit**: Framework for building the web application.
 - **Groq**: API for generating responses based on images and prompts.
+- **mistral**: API for generating responses based on images and prompts.
 - **Tailwind CSS**: CSS framework for styling the UI.
 - **dotenv**: For loading environment variables.
 
@@ -25,6 +26,7 @@ This project is a Streamlit application that allows users to upload an image and
 
 - Python 3.10 
 - An active Groq API key
+- An active Mistral API key
 
 ### Steps
 
@@ -42,6 +44,7 @@ pip install -r requirements.txt
 Create a .env file in the root directory of the project and add your Groq API key:
 ```bash
 GROQ_API_KEY=your_api_key
+MISTRAL_API_KEY =your_api_key
 ```
 4. **Run the application:**
 ```bash
